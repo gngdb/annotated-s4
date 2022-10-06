@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import jax
 import numpy as np
 import torch
@@ -103,6 +104,102 @@ def create_sin_ax_b_dataset(n_examples=20000, bsz=128):
     )
 
     return trainloader, testloader, N_CLASSES, SEQ_LENGTH, IN_DIM
+
+
+# ### Tiny Shakespeare
+# **Task**: Overfit to a tiny subset of Shakespeare's works.
+#
+# From [minGPT](https://github.com/karpathy/minGPT)
+class CharDataset(torch.utils.data.Dataset):
+    """
+    Emits batches of characters
+    """
+    def __init__(self, block_size, data, chars=None):
+        if chars is None:
+            chars = sorted(list(set(data)))
+        data_size, vocab_size = len(data), len(chars)
+        print('data has %d characters, %d unique.' % (data_size, vocab_size))
+
+        self.stoi = { ch:i for i,ch in enumerate(chars) }
+        self.itos = { i:ch for i,ch in enumerate(chars) }
+        self.vocab_size = vocab_size
+        self.data = data
+        self.block_size = block_size
+
+    def __len__(self):
+        return len(self.data) - self.block_size
+
+    def __getitem__(self, idx):
+        # grab a chunk of (block_size + 1) characters from the data
+        chunk = self.data[idx:idx + self.block_size]
+        # encode every character to an integer
+        return (torch.tensor([self.stoi[s] for s in chunk], dtype=torch.long).view(-1, 1), 0)
+
+def create_tiny_shakespeare_dataset(bsz=128):
+    print("[*] Loading Tiny Shakespeare Dataset...")
+
+    if Path("tinyshakespeare.txt").exists():
+        print("\t=>> Found Tiny Shakespeare Dataset...")
+    else:
+        print("\t=>> Downloading Tiny Shakespeare Dataset...")
+        os.system(
+            "wget https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
+        )
+        os.system("mv input.txt tinyshakespeare.txt")
+
+    # Constants
+    SEQ_LENGTH, IN_DIM = 4096, 1
+
+    # load the file
+    with open('tinyshakespeare.txt', 'r') as f:
+        text = f.read()
+    # split this long string into training and validation chunks
+    train_text = text[:int(len(text) * 0.9)]
+    val_text = text[int(len(text) * 0.9):]
+    # create datasets
+    train_dataset = CharDataset(SEQ_LENGTH, train_text)
+    val_dataset = CharDataset(SEQ_LENGTH, val_text, [train_dataset.itos[i] for i in sorted(list(train_dataset.itos))])
+
+    # create dataloaders
+    trainloader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=bsz, shuffle=False
+    )
+
+    return trainloader, testloader, train_dataset.vocab_size, SEQ_LENGTH, IN_DIM
+
+# ### Motion Capture as Text
+def create_motiontxt_dataset(bsz=128):
+    print("[*] Loading AMASS and AIST++ as text...")
+
+    # load txt files
+    text = ""
+    for file_path in tqdm(Path('./txt_train').glob('*.txt')):
+        with open(file_path, 'r') as f:
+            text += f.read() + '\n'
+
+    # Constants
+    SEQ_LENGTH, IN_DIM = 2304, 1
+
+    # split this long string into training and validation chunks
+    train_text = text[:int(len(text) * 0.9)]
+    val_text = text[int(len(text) * 0.9):]
+    # create datasets
+    train_dataset = CharDataset(SEQ_LENGTH, train_text)
+    val_dataset = CharDataset(SEQ_LENGTH, val_text, [train_dataset.itos[i] for i in sorted(list(train_dataset.itos))])
+
+    # create dataloaders
+    trainloader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=bsz, shuffle=True
+    )
+    testloader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=bsz, shuffle=False
+    )
+
+    return trainloader, testloader, train_dataset.vocab_size, SEQ_LENGTH, IN_DIM
+
 
 
 # ### MNIST Sequence Modeling
@@ -667,4 +764,6 @@ Datasets = {
     "cifar-classification": create_cifar_classification_dataset,
     "imdb-classification": create_imdb_classification_dataset,
     "listops-classification": create_listops_classification_dataset,
+    "tiny-shakespeare": create_tiny_shakespeare_dataset,
+    "motiontxt": create_motiontxt_dataset,
 }

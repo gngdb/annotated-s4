@@ -152,12 +152,29 @@ def create_train_state(
 # operate by taking in a training state, model class, dataloader, and critically, the model-specific step function.
 # We define the step functions on a model-specific basis below.
 
+# https://stackoverflow.com/a/1630350
+def lookahead(iterable):
+    """Pass through all values from the given iterable, augmented by the
+    information if there are more values to come after the current one
+    (True), or if it is the last value (False).
+    """
+    # Get an iterator and pull the first value.
+    it = iter(iterable)
+    last = next(it)
+    # Run the iterator to exhaustion (starting from the second value).
+    for val in it:
+        # Report the *previous* value (more to come).
+        yield last, True
+        last = val
+    # Report the last value.
+    yield last, False
+
 
 def train_epoch(state, rng, model, trainloader, classification=False):
     # Store Metrics
     model = model(training=True)
     batch_losses, batch_accuracies = [], []
-    for batch_idx, (inputs, labels) in enumerate(tqdm(trainloader)):
+    for (inputs, labels), has_more in lookahead(tqdm(trainloader)):
         inputs = np.array(inputs.numpy())
         labels = np.array(labels.numpy())  # Not the most efficient...
         rng, drop_rng = jax.random.split(rng)
@@ -169,6 +186,8 @@ def train_epoch(state, rng, model, trainloader, classification=False):
             model,
             classification=classification,
         )
+        if wandb is not None:
+            wandb.log({"train/loss": loss, "train/acc": acc}, commit=has_more)
         batch_losses.append(loss)
         batch_accuracies.append(acc)
 
@@ -192,8 +211,11 @@ def validate(params, model, testloader, classification=False):
         )
         losses.append(loss)
         accuracies.append(acc)
+    loss, acc = np.mean(np.array(losses)), np.mean(np.array(accuracies))
+    if wandb is not None:
+        wandb.log({"val/loss": loss, "val/acc": acc}, commit=False)
 
-    return np.mean(np.array(losses)), np.mean(np.array(accuracies))
+    return loss, acc
 
 
 # ### Feed-Forward Model
@@ -405,14 +427,15 @@ def example_train(
         )
 
         if wandb is not None:
-            wandb.log(
-                {
-                    "train/loss": train_loss,
-                    "train/accuracy": train_acc,
-                    "test/loss": test_loss,
-                    "test/accuracy": test_acc,
-                }
-            )
+            # wandb.log(
+            #     {
+            #         "train/loss": train_loss,
+            #         "train/accuracy": train_acc,
+            #         "test/loss": test_loss,
+            #         "test/accuracy": test_acc,
+            #     }
+            # )
+            wandb.log({}, commit=True)
             wandb.run.summary["Best Test Loss"] = best_loss
             wandb.run.summary["Best Test Accuracy"] = best_acc
             wandb.run.summary["Best Epoch"] = best_epoch
