@@ -1,4 +1,6 @@
 #!/bin/bash
+# move to home dir
+cd $HOME
 # update the system
 sudo apt-get update
 sudo apt-get upgrade -y
